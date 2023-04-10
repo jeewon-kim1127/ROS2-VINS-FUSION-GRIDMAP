@@ -4,6 +4,7 @@ project(loop_fusion)
 set(CMAKE_CXX_STANDARD 14)
 add_compile_options( -Wextra -Wpedantic) # -Wall : print warning
 set(CMAKE_BUILD_TYPE Release)
+set(PCL_LIBRARY_DIRS "/lib/aarch64-linux-gnu")
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -20,9 +21,10 @@ find_package(OpenCV)
 find_package(Ceres REQUIRED)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package(Eigen3)
+find_package(PCL 1.10 REQUIRED)
+find_package(pcl_conversions)
 
-include_directories( ${CERES_INCLUDE_DIRS}  ${EIGEN3_INCLUDE_DIR}) #${catkin_INCLUDE_DIRS})
-
+include_directories( ${CERES_INCLUDE_DIRS}  ${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS}) #${catkin_INCLUDE_DIRS})
 
 
 add_executable(loop_fusion_node
@@ -43,9 +45,10 @@ add_executable(loop_fusion_node
 
     
 # added from DEBUG
-ament_target_dependencies(loop_fusion_node camera_models rclcpp ament_index_cpp std_msgs sensor_msgs visualization_msgs nav_msgs cv_bridge OpenCV) # roslib) # does 'roslib' really need ??
+ament_target_dependencies(loop_fusion_node camera_models rclcpp ament_index_cpp std_msgs sensor_msgs
+    visualization_msgs nav_msgs cv_bridge OpenCV pcl_conversions) # roslib) # does 'roslib' really need ??
 
-target_link_libraries(loop_fusion_node ${OpenCV_LIBS} ${CERES_LIBRARIES} ) #${catkin_LIBRARIES}  )
+target_link_libraries(loop_fusion_node ${OpenCV_LIBS} ${CERES_LIBRARIES} ${PCL_LIBRARIES} )#${catkin_LIBRARIES}  )
 
 
 
@@ -74,7 +77,7 @@ install(
 #)
 
 
-
+ament_export_include_directories(include)
 
 
 ament_package()

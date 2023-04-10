@@ -35,6 +35,8 @@
 #include "utility/CameraPoseVisualization.h"
 // #include "camodocal/camera_models/CameraFactory.h"
 #include "parameters.h"
+#include "kefico.h"
+
 #define SKIP_FIRST_CNT 10
 using namespace std;
 
@@ -76,7 +78,8 @@ Eigen::Vector3d last_t(-100, -100, -100);
 double last_image_time = -1;
 
 rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr pub_point_cloud, pub_margin_cloud;
-
+//auto kefico = std::make_shared<Kefico>();
+Kefico kef;
 void new_sequence()
 {
     printf("new sequence\n");
@@ -89,6 +92,8 @@ void new_sequence()
     }
     posegraph.posegraph_visualization->reset();
     posegraph.publish();
+    kef.publish();
+
     m_buf.lock();
     while(!image_buf.empty())
         image_buf.pop();
@@ -230,8 +235,6 @@ void vio_callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
     cameraposevisual.reset();
     cameraposevisual.add_pose(vio_t_cam, vio_q_cam);
     cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
-
-
 }
 
 void extrinsic_callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
@@ -293,6 +296,8 @@ void process()
                 point_buf.pop();
             }
         }
+
+        kef.process();
         m_buf.unlock();
 
         if (pose_msg != NULL)
@@ -413,6 +418,9 @@ int main(int argc, char **argv)
     rclcpp::init(argc, argv);
     auto n = rclcpp::Node::make_shared("loop_fusion");
     posegraph.registerPub(n);
+    auto kefico = std::make_shared<Kefico>();
+
+    kefico->registerPub(n);
     
     VISUALIZATION_SHIFT_X = 0;
     VISUALIZATION_SHIFT_Y = 0;
@@ -481,6 +489,10 @@ int main(int argc, char **argv)
         printf("load pose graph\n");
         m_process.lock();
         posegraph.loadPoseGraph();
+
+        kefico->loadSurfelMap();
+        if (kefico->is_surmap_loaded) kefico->project2occugrid();
+
         m_process.unlock();
         printf("load pose graph finish\n");
         load_flag = 1;
@@ -497,13 +509,21 @@ int main(int argc, char **argv)
     auto sub_extrinsic    = n->create_subscription<nav_msgs::msg::Odometry>("/vins_estimator/extrinsic", rclcpp::QoS(rclcpp::KeepLast(2000)), extrinsic_callback);
     auto sub_point        = n->create_subscription<sensor_msgs::msg::PointCloud>("/vins_estimator/keyframe_point", rclcpp::QoS(rclcpp::KeepLast(2000)), point_callback);
     auto sub_margin_point = n->create_subscription<sensor_msgs::msg::PointCloud>("/vins_estimator/margin_cloud", rclcpp::QoS(rclcpp::KeepLast(2000)), margin_point_callback);
-
-
     pub_match_img          = n->create_publisher<sensor_msgs::msg::Image>("match_image", 1000);
     pub_camera_pose_visual = n->create_publisher<visualization_msgs::msg::MarkerArray>("camera_pose_visual", 1000);
     pub_point_cloud        = n->create_publisher<sensor_msgs::msg::PointCloud>("point_cloud_loop_rect", 1000);
     pub_margin_cloud       = n->create_publisher<sensor_msgs::msg::PointCloud>("margin_cloud_loop_rect", 1000);
     pub_odometry_rect      = n->create_publisher<nav_msgs::msg::Odometry>("odometry_rect", 1000);
+    //kefico.SubNPub(n);
+    auto sub_rplan = n->create_subscription<std_msgs::msg::Bool>("/replanning/local_planner", rclcpp::QoS(rclcpp::KeepLast(2000)), std::bind(&Kefico::callback_rplan, kefico, std::placeholders::_1));
+    auto sub_triggered = n->create_subscription<std_msgs::msg::Bool>("/replanning/global_planner", rclcpp::QoS(rclcpp::KeepLast(2000)), std::bind(&Kefico::callback_triggered, kefico, std::placeholders::_1));
+    auto sub_depth_pts = n->create_subscription<sensor_msgs::msg::PointCloud2>("/saslam/map_cloud", rclcpp::QoS(rclcpp::KeepLast(2000)), std::bind(&Kefico::callback_depthcloud, kefico, std::placeholders::_1));
+    
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_irate_path;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pubReplanning;
+    
+    pub_irate_path = n->create_publisher<nav_msgs::msg::Odometry>("imurate_pose", 1000);
+    pubReplanning = n->create_publisher<std_msgs::msg::Bool>("/replanning/slam", 2);
 
     std::thread measurement_process;
     std::thread keyboard_command_process;

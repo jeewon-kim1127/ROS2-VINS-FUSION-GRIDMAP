@@ -950,6 +950,7 @@ void PoseGraph::savePoseGraph()
     printf("save pose graph time: %f s\n", tmp_t.toc() / 1000);
     m_keyframelist.unlock();
 }
+
 void PoseGraph::loadPoseGraph()
 {
     TicToc tmp_t;
